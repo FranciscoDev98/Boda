@@ -1,0 +1,5 @@
+{
+  "demo1": { "nombre": "Familia Pérez Gómez", "cupos": 4 },
+  "demo2": { "nombre": "Tía Marta y Jorge", "cupos": 2 },
+  "demo3": { "nombre": "Carlos Rodríguez", "cupos": 1 }
+}

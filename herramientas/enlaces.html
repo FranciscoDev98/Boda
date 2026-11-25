@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Generar enlaces de invitados</title>
+<style>
+:root{--ink:#1E3F60;--blue:#2F5B85;--soft:#DCE9F5;--line:#C9DCEE;--bg:#F4F8FC;--gold:#C8A96A}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:980px;margin:0 auto;padding:32px 16px 80px}
+h1{font-size:28px;margin:0 0 4px}
+h2{font-size:18px;margin:32px 0 8px}
+p{margin:0 0 12px}
+.nota{font-size:14px;color:#4A6A88}
+label{display:block;font-weight:600;font-size:14px;margin:14px 0 6px}
+input[type=text],textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font:inherit;background:#fff;color:var(--ink)}
+textarea{min-height:190px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px}
+button,.btn{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px;border:0;border-radius:999px;background:var(--ink);color:#fff;font:inherit;font-weight:600;cursor:pointer;text-decoration:none}
+button.sec,.btn.sec{background:#fff;color:var(--blue);border:1px solid var(--blue)}
+button.mini{min-height:36px;padding:0 12px;font-size:13px}
+.fila{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.caja{background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px}
+.tabla{overflow-x:auto;margin-top:12px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#4A6A88}
+td.link{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;word-break:break-all}
+.aviso{margin-top:12px;padding:12px 14px;border-radius:12px;background:#FFF8E8;border:1px solid var(--gold);font-size:14px}
+code{background:var(--soft);padding:1px 6px;border-radius:6px;font-size:13px}
+</style>
+</head>
+<body>
+<main>
+<h1>Enlaces de invitados</h1>
+<p class="nota">Esta página funciona solo en tu navegador: no envía la lista a ningún lado. Los teléfonos se usan únicamente para armar los enlaces de WhatsApp y <strong>no</strong> se guardan en <code>invitados.json</code>.</p>
+
+<div class="caja">
+<label for="base">1. Dirección de tu invitación</label>
+<input type="text" id="base" placeholder="https://tu-usuario.github.io/boda/">
+
+<label for="lista">2. Invitados — uno por línea: <code>Nombre ; cupos ; teléfono (opcional)</code></label>
+<textarea id="lista" placeholder="Familia Pérez Gómez ; 4 ; 3001234567&#10;Tía Marta y Jorge ; 2 ; 3109876543&#10;Carlos Rodríguez ; 1"></textarea>
+
+<label for="previo">3. (Opcional) Carga tu <code>invitados.json</code> actual para conservar los códigos ya enviados</label>
+<input type="file" id="previo" accept=".json,application/json">
+
+<div class="fila">
+<button type="button" id="generar">Generar enlaces</button>
+<button type="button" class="sec" id="bajar-json" disabled>Descargar invitados.json</button>
+<button type="button" class="sec" id="bajar-csv" disabled>Descargar enlaces (CSV)</button>
+</div>
+<div class="aviso" id="aviso" hidden></div>
+</div>
+
+<h2>Enlaces</h2>
+<p class="nota">Después de generar: descarga <code>invitados.json</code>, reemplázalo en la carpeta del sitio y súbelo. Luego envía a cada invitado su enlace.</p>
+<div class="tabla caja">
+<table>
+<thead><tr><th>Invitado</th><th>Cupos</th><th>Código</th><th>Enlace</th><th></th></tr></thead>
+<tbody id="filas"><tr><td colspan="5" class="nota">Aún no has generado enlaces.</td></tr></tbody>
+</table>
+</div>
+</main>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var previo = {};      // código -> {nombre, cupos} cargado del archivo actual
+  var resultado = [];   // filas generadas
+
+  // Por defecto, la invitación está una carpeta arriba de esta herramienta
+  try {
+    if (location.protocol.indexOf('http') === 0) {
+      $('base').value = new URL('../', location.href).href;
+    }
+  } catch (e) {}
+
+  $('previo').addEventListener('change', function (ev) {
+    var f = ev.target.files[0];
+    if (!f) return;
+    f.text().then(function (t) {
+      try { previo = JSON.parse(t) || {}; aviso('Se cargaron ' + Object.keys(previo).length + ' invitados existentes: sus códigos se conservan.'); }
+      catch (e) { previo = {}; aviso('No pude leer ese archivo. ¿Es el invitados.json del sitio?'); }
+    });
+  });
+
+  function aviso(t) { $('aviso').textContent = t; $('aviso').hidden = !t; }
+  function norm(s) { return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim(); }
+  function nuevoCodigo(usados) {
+    var abc = 'abcdefghjkmnpqrstuvwxyz23456789';   // sin letras/números que se confunden
+    for (;;) {
+      var c = '', r = new Uint32Array(5);
+      crypto.getRandomValues(r);
+      for (var i = 0; i < 5; i++) c += abc[r[i] % abc.length];
+      if (!usados[c]) return c;
+    }
+  }
+
+  $('generar').addEventListener('click', function () {
+    var base = $('base').value.trim();
+    if (!/^https?:\/\//i.test(base)) { aviso('Escribe la dirección de tu invitación, empezando por https://'); return; }
+    base = base.split('?')[0].split('#')[0];
+    var porNombre = {}, usados = {};
+    Object.keys(previo).forEach(function (c) { usados[c] = true; if (previo[c] && previo[c].nombre) porNombre[norm(previo[c].nombre)] = c; });
+
+    resultado = [];
+    var vistos = {};
+    $('lista').value.split(/\r?\n/).forEach(function (linea) {
+      if (!linea.trim()) return;
+      var p = linea.split(/[;\t]/).map(function (x) { return x.trim(); });
+      var nombre = p[0].slice(0, 60);
+      if (!nombre || vistos[norm(nombre)]) return;
+      vistos[norm(nombre)] = true;
+      var cupos = parseInt(p[1], 10); if (!(cupos > 0 && cupos < 100)) cupos = 0;
+      var tel = (p[2] || '').replace(/\D/g, '');
+      if (tel.length === 10) tel = '57' + tel;          // celular colombiano sin indicativo
+      var codigo = porNombre[norm(nombre)] || nuevoCodigo(usados);
+      usados[codigo] = true;
+      resultado.push({ nombre: nombre, cupos: cupos, tel: tel, codigo: codigo, url: base + '?i=' + codigo });
+    });
+
+    if (!resultado.length) { aviso('Agrega al menos un invitado.'); return; }
+    aviso('Listo: ' + resultado.length + ' enlaces. Descarga invitados.json y súbelo al sitio antes de enviarlos.');
+    pintar();
+    $('bajar-json').disabled = false; $('bajar-csv').disabled = false;
+  });
+
+  function pintar() {
+    var tb = $('filas'); tb.textContent = '';
+    resultado.forEach(function (r) {
+      var tr = document.createElement('tr');
+      [r.nombre, r.cupos || '—', r.codigo].forEach(function (v) { var td = document.createElement('td'); td.textContent = v; tr.appendChild(td); });
+      var tdL = document.createElement('td'); tdL.className = 'link'; tdL.textContent = r.url; tr.appendChild(tdL);
+      var tdA = document.createElement('td'); tdA.style.whiteSpace = 'nowrap';
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'sec mini'; b.textContent = 'Copiar';
+      b.addEventListener('click', function () { navigator.clipboard.writeText(r.url).then(function () { b.textContent = 'Copiado'; setTimeout(function () { b.textContent = 'Copiar'; }, 1500); }); });
+      tdA.appendChild(b);
+      var msg = 'Hola ' + r.nombre + ', con mucha alegría queremos invitarte a nuestra boda. Aquí está tu invitación: ' + r.url;
+      var a = document.createElement('a'); a.className = 'btn mini'; a.target = '_blank'; a.rel = 'noopener'; a.style.marginLeft = '6px';
+      a.style.minHeight = '36px'; a.style.padding = '0 12px'; a.style.fontSize = '13px';
+      a.textContent = 'WhatsApp';
+      a.href = 'https://wa.me/' + (r.tel || '') + '?text=' + encodeURIComponent(msg);
+      tdA.appendChild(a);
+      tr.appendChild(tdA); tb.appendChild(tr);
+    });
+  }
+
+  function bajar(nombre, texto, tipo) {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([texto], { type: tipo }));
+    a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
+  }
+  $('bajar-json').addEventListener('click', function () {
+    var o = {};
+    resultado.forEach(function (r) { o[r.codigo] = r.cupos ? { nombre: r.nombre, cupos: r.cupos } : { nombre: r.nombre }; });
+    bajar('invitados.json', JSON.stringify(o, null, 2) + '\n', 'application/json');
+  });
+  $('bajar-csv').addEventListener('click', function () {
+    var q = function (s) { return '"' + String(s).replace(/"/g, '""') + '"'; };
+    var filas = [['Invitado', 'Cupos', 'Codigo', 'Enlace', 'Telefono'].join(',')];
+    resultado.forEach(function (r) { filas.push([q(r.nombre), r.cupos || '', r.codigo, q(r.url), r.tel].join(',')); });
+    bajar('enlaces-invitados.csv', '﻿' + filas.join('\r\n') + '\r\n', 'text/csv;charset=utf-8');
+  });
+})();
+</script>
+</body>
+</html>
